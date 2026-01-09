@@ -1,8 +1,18 @@
+import http from 'http'
 import makeWASocket, { useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys'
-import { Boom } from '@hapi/boom'
-import './server.js'
 
-const startBot = async () => {
+const PORT = process.env.PORT || 3000
+
+// Servidor keep-alive
+http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' })
+  res.end('🟢 BOLT ONLINE')
+}).listen(PORT)
+
+console.log('Servidor Bolt ativo na porta', PORT)
+
+// BOT
+async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState('./auth')
 
   const sock = makeWASocket({
@@ -12,20 +22,17 @@ const startBot = async () => {
 
   sock.ev.on('creds.update', saveCreds)
 
-  sock.ev.on('connection.update', (update) => {
-    const { connection, lastDisconnect } = update
-
+  sock.ev.on('connection.update', ({ connection, lastDisconnect }) => {
     if (connection === 'close') {
-      const reason = new Boom(lastDisconnect?.error)?.output?.statusCode
+      const reason = lastDisconnect?.error?.output?.statusCode
       if (reason !== DisconnectReason.loggedOut) startBot()
     }
 
     if (connection === 'open') {
-      console.log('🛡️ BOLT CONECTADO AO WHATSAPP')
+      console.log('🟢 BOLT CONECTADO AO WHATSAPP')
     }
   })
 
-  // Anti-link automático
   sock.ev.on('messages.upsert', async ({ messages }) => {
     const msg = messages[0]
     if (!msg.message || !msg.key.remoteJid.endsWith('@g.us')) return
