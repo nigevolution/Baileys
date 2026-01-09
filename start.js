@@ -1,12 +1,12 @@
-const { makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys')
-const P = require('pino')
+import makeWASocket, { useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys'
+import { Boom } from '@hapi/boom'
+import './server.js'
 
-async function start() {
+const startBot = async () => {
   const { state, saveCreds } = await useMultiFileAuthState('./auth')
 
   const sock = makeWASocket({
     auth: state,
-    logger: P({ level: 'silent' }),
     printQRInTerminal: true
   })
 
@@ -16,16 +16,26 @@ async function start() {
     const { connection, lastDisconnect } = update
 
     if (connection === 'close') {
-      const shouldReconnect =
-        lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut
-
-      if (shouldReconnect) start()
+      const reason = new Boom(lastDisconnect?.error)?.output?.statusCode
+      if (reason !== DisconnectReason.loggedOut) startBot()
     }
 
     if (connection === 'open') {
-      console.log('🟢 BOLT ONLINE COM SUCESSO')
+      console.log('🛡️ BOLT CONECTADO AO WHATSAPP')
+    }
+  })
+
+  // Anti-link automático
+  sock.ev.on('messages.upsert', async ({ messages }) => {
+    const msg = messages[0]
+    if (!msg.message || !msg.key.remoteJid.endsWith('@g.us')) return
+
+    const text = msg.message.conversation || msg.message.extendedTextMessage?.text || ''
+    if (text.includes('http://') || text.includes('https://')) {
+      await sock.sendMessage(msg.key.remoteJid, { text: '🚫 LINKS NÃO SÃO PERMITIDOS AQUI' })
+      await sock.groupParticipantsUpdate(msg.key.remoteJid, [msg.key.participant], 'remove')
     }
   })
 }
 
-start()
+startBot()
